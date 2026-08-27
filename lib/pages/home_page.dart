@@ -1,33 +1,6 @@
 import 'package:flutter/material.dart';
 
-void main() {
-  runApp(const KargoRotaApp());
-}
-
-enum KargoDurumu {
-  pending,
-  delivered,
-  skipped,
-}
-
-class Kargo {
-  final int id;
-  final int teslimatId;
-  final String alici;
-
-  String adres;
-  String not;
-  KargoDurumu durum;
-
-  Kargo({
-    required this.id,
-    required this.teslimatId,
-    required this.alici,
-    required this.adres,
-    this.not = '',
-    this.durum = KargoDurumu.pending,
-  });
-}
+import '../models/kargo_store.dart';
 
 class YeniTeslimatVerisi {
   final int adet;
@@ -53,48 +26,6 @@ class TopluKargoSatiri {
   });
 }
 
-class TeslimatGrubu {
-  final List<Kargo> kargolar;
-
-  TeslimatGrubu({
-    required this.kargolar,
-  });
-
-  Kargo get ilkKargo => kargolar.first;
-
-  int get adet => kargolar.length;
-
-  int get teslimatId => ilkKargo.teslimatId;
-
-  String get alici => ilkKargo.alici;
-
-  String get adres => ilkKargo.adres;
-
-  String get not => ilkKargo.not;
-
-  bool get teslimEdildi {
-    return kargolar.every(
-      (kargo) => kargo.durum == KargoDurumu.delivered,
-    );
-  }
-}
-
-class KargoRotaApp extends StatelessWidget {
-  const KargoRotaApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: 'Kargo Rota',
-      theme: ThemeData(
-        useMaterial3: true,
-      ),
-      home: const KargoAnaSayfa(),
-    );
-  }
-}
-
 class KargoAnaSayfa extends StatefulWidget {
   const KargoAnaSayfa({super.key});
 
@@ -103,105 +34,14 @@ class KargoAnaSayfa extends StatefulWidget {
 }
 
 class _KargoAnaSayfaState extends State<KargoAnaSayfa> {
-  final List<Kargo> kargolar = [
-    Kargo(
-      id: 1,
-      teslimatId: 1,
-      alici: '',
-      adres: 'Anadolu Cad. No:15',
-    ),
-    Kargo(
-      id: 2,
-      teslimatId: 2,
-      alici: '',
-      adres: 'Çambaşı Cad. No:22',
-    ),
-    Kargo(
-      id: 3,
-      teslimatId: 3,
-      alici: '',
-      adres: 'Atatürk Bulvarı No:8',
-    ),
-    Kargo(
-      id: 4,
-      teslimatId: 4,
-      alici: '',
-      adres: 'Avrupa Cad. No:36',
-    ),
-    Kargo(
-      id: 5,
-      teslimatId: 5,
-      alici: '',
-      adres: 'Kurtuluş Cad. No:12',
-    ),
-  ];
+  List<Kargo> get kargolar => kargoStore.kargolar;
 
-  int get bekleyenSayisi {
-    return kargolar
-        .where(
-          (kargo) => kargo.durum == KargoDurumu.pending,
-        )
-        .length;
-  }
+  int get bekleyenSayisi => kargoStore.bekleyenSayisi;
 
-  int get teslimEdilenSayisi {
-    return kargolar
-        .where(
-          (kargo) => kargo.durum == KargoDurumu.delivered,
-        )
-        .length;
-  }
+  int get teslimEdilenSayisi => kargoStore.teslimEdilenSayisi;
 
-  List<TeslimatGrubu> get teslimatGruplari {
-    final gruplar = <int, List<Kargo>>{};
-
-    for (final kargo in kargolar) {
-      gruplar.putIfAbsent(
-        kargo.teslimatId,
-        () => [],
-      );
-
-      gruplar[kargo.teslimatId]!.add(kargo);
-    }
-
-    return gruplar.values
-        .map(
-          (liste) => TeslimatGrubu(
-            kargolar: liste,
-          ),
-        )
-        .toList();
-  }
-
-  int yeniKargoIdOlustur() {
-    if (kargolar.isEmpty) {
-      return 1;
-    }
-
-    return kargolar
-            .map(
-              (kargo) => kargo.id,
-            )
-            .reduce(
-              (a, b) => a > b ? a : b,
-            ) +
-        1;
-  }
-
-  int yeniTeslimatIdOlustur() {
-    if (kargolar.isEmpty) {
-      return 1;
-    }
-
-    return kargolar
-            .map(
-              (kargo) => kargo.teslimatId,
-            )
-            .reduce(
-              (a, b) => a > b ? a : b,
-            ) +
-        1;
-  }
+  List<TeslimatGrubu> get teslimatGruplari =>
+      kargoStore.teslimatGruplari;
 
   Future<bool> teslimOnayiSor(
     TeslimatGrubu grup,
@@ -310,11 +150,7 @@ class _KargoAnaSayfaState extends State<KargoAnaSayfa> {
       return;
     }
 
-    setState(() {
-      for (final kargo in grup.kargolar) {
-        kargo.durum = KargoDurumu.delivered;
-      }
-    });
+    kargoStore.teslimEt(grup);
   }
 
   Future<void> teslimatiGeriAl(
@@ -328,11 +164,7 @@ class _KargoAnaSayfaState extends State<KargoAnaSayfa> {
       return;
     }
 
-    setState(() {
-      for (final kargo in grup.kargolar) {
-        kargo.durum = KargoDurumu.pending;
-      }
-    });
+    kargoStore.teslimatiGeriAl(grup);
   }
 
   Future<void> teslimatMenuAc(
@@ -446,11 +278,10 @@ class _KargoAnaSayfaState extends State<KargoAnaSayfa> {
       return;
     }
 
-    setState(() {
-      for (final kargo in grup.kargolar) {
-        kargo.not = yeniNot;
-      }
-    });
+    kargoStore.notGuncelle(
+      grup,
+      yeniNot,
+    );
   }
 
   Future<void> adresDuzenle(
@@ -473,11 +304,10 @@ class _KargoAnaSayfaState extends State<KargoAnaSayfa> {
       return;
     }
 
-    setState(() {
-      for (final kargo in grup.kargolar) {
-        kargo.adres = yeniAdres.trim();
-      }
-    });
+    kargoStore.adresGuncelle(
+      grup,
+      yeniAdres.trim(),
+    );
   }
 
   Future<void> kargoEkleMenuAc() async {
@@ -578,22 +408,11 @@ class _KargoAnaSayfaState extends State<KargoAnaSayfa> {
         return;
       }
 
-      final teslimatId = yeniTeslimatIdOlustur();
-
-      setState(() {
-        for (int i = 0;
-            i < yeniTeslimat.adet;
-            i++) {
-          kargolar.add(
-            Kargo(
-              id: yeniKargoIdOlustur(),
-              teslimatId: teslimatId,
-              alici: yeniTeslimat.alici,
-              adres: yeniTeslimat.adres,
-            ),
-          );
-        }
-      });
+      kargoStore.teslimatEkle(
+        adet: yeniTeslimat.adet,
+        alici: yeniTeslimat.alici,
+        adres: yeniTeslimat.adres,
+      );
     }
 
     if (secim == 'toplu') {
@@ -615,27 +434,15 @@ class _KargoAnaSayfaState extends State<KargoAnaSayfa> {
 
       int toplamEklenen = 0;
 
-      setState(() {
-        for (final teslimat in yeniTeslimatlar) {
-          final teslimatId =
-              yeniTeslimatIdOlustur();
+      for (final teslimat in yeniTeslimatlar) {
+        kargoStore.teslimatEkle(
+          adet: teslimat.adet,
+          alici: teslimat.alici,
+          adres: teslimat.adres,
+        );
 
-          for (int i = 0;
-              i < teslimat.adet;
-              i++) {
-            kargolar.add(
-              Kargo(
-                id: yeniKargoIdOlustur(),
-                teslimatId: teslimatId,
-                alici: teslimat.alici,
-                adres: teslimat.adres,
-              ),
-            );
-
-            toplamEklenen++;
-          }
-        }
-      });
+        toplamEklenen += teslimat.adet;
+      }
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -649,9 +456,12 @@ class _KargoAnaSayfaState extends State<KargoAnaSayfa> {
 
   @override
   Widget build(BuildContext context) {
-    final gruplar = teslimatGruplari;
+    return AnimatedBuilder(
+      animation: kargoStore,
+      builder: (context, child) {
+        final gruplar = teslimatGruplari;
 
-    return Scaffold(
+        return Scaffold(
       appBar: AppBar(
         title: const Text(
           'Kargo Dağıtım',
@@ -760,16 +570,18 @@ class _KargoAnaSayfaState extends State<KargoAnaSayfa> {
           ),
         ],
       ),
-      floatingActionButton:
-          FloatingActionButton.extended(
-        onPressed: kargoEkleMenuAc,
-        icon: const Icon(
-          Icons.add,
-        ),
-        label: const Text(
-          'Kargo Ekle',
-        ),
-      ),
+          floatingActionButton:
+              FloatingActionButton.extended(
+            onPressed: kargoEkleMenuAc,
+            icon: const Icon(
+              Icons.add,
+            ),
+            label: const Text(
+              'Kargo Ekle',
+            ),
+          ),
+        );
+      },
     );
   }
 }
