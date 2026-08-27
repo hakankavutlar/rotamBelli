@@ -6,6 +6,18 @@ enum KargoDurumu {
   skipped,
 }
 
+enum KonumDogrulugu {
+  kullaniciDogruladi,
+  tam,
+  yaklasik,
+}
+
+enum KonumKaynagi {
+  kurye,
+  osm,
+  google,
+}
+
 class Kargo {
   final int id;
   final int teslimatId;
@@ -15,6 +27,11 @@ class Kargo {
   String not;
   KargoDurumu durum;
 
+  double? latitude;
+  double? longitude;
+  KonumDogrulugu? konumDogrulugu;
+  KonumKaynagi? konumKaynagi;
+
   Kargo({
     required this.id,
     required this.teslimatId,
@@ -22,6 +39,10 @@ class Kargo {
     required this.adres,
     this.not = '',
     this.durum = KargoDurumu.pending,
+    this.latitude,
+    this.longitude,
+    this.konumDogrulugu,
+    this.konumKaynagi,
   });
 }
 
@@ -32,63 +53,112 @@ class TeslimatGrubu {
     required this.kargolar,
   });
 
-  Kargo get ilkKargo => kargolar.first;
+  Kargo get ilkKargo =>
+      kargolar.first;
 
-  int get adet => kargolar.length;
+  int get adet =>
+      kargolar.length;
 
-  int get teslimatId => ilkKargo.teslimatId;
+  int get teslimatId =>
+      ilkKargo.teslimatId;
 
-  String get alici => ilkKargo.alici;
+  String get alici =>
+      ilkKargo.alici;
 
-  String get adres => ilkKargo.adres;
+  String get adres =>
+      ilkKargo.adres;
 
-  String get not => ilkKargo.not;
+  String get not =>
+      ilkKargo.not;
+
+  double? get latitude =>
+      ilkKargo.latitude;
+
+  double? get longitude =>
+      ilkKargo.longitude;
+
+  KonumDogrulugu?
+      get konumDogrulugu =>
+          ilkKargo
+              .konumDogrulugu;
+
+  KonumKaynagi?
+      get konumKaynagi =>
+          ilkKargo.konumKaynagi;
+
+  bool get konumuVar {
+    return latitude != null &&
+        longitude != null;
+  }
+
+  bool get konumYaklasik {
+    return konumDogrulugu ==
+        KonumDogrulugu.yaklasik;
+  }
+
+  bool get kuryeDogruladi {
+    return konumDogrulugu ==
+            KonumDogrulugu
+                .kullaniciDogruladi &&
+        konumKaynagi ==
+            KonumKaynagi.kurye;
+  }
 
   bool get teslimEdildi {
     return kargolar.every(
-      (kargo) => kargo.durum == KargoDurumu.delivered,
+      (kargo) =>
+          kargo.durum ==
+          KargoDurumu.delivered,
     );
   }
 }
 
-class KargoStore extends ChangeNotifier {
+class KargoStore
+    extends ChangeNotifier {
   final List<Kargo> kargolar = [
     Kargo(
       id: 1,
       teslimatId: 1,
       alici: '',
-      adres: 'Anadolu Cad. No:15',
+      adres:
+          'Anadolu Cad. No:15',
     ),
     Kargo(
       id: 2,
       teslimatId: 2,
       alici: '',
-      adres: 'Çambaşı Cad. No:22',
+      adres:
+          'Çambaşı Cad. No:22',
     ),
     Kargo(
       id: 3,
       teslimatId: 3,
       alici: '',
-      adres: 'Atatürk Bulvarı No:8',
+      adres:
+          'Atatürk Bulvarı No:8',
     ),
     Kargo(
       id: 4,
       teslimatId: 4,
       alici: '',
-      adres: 'Avrupa Cad. No:36',
+      adres:
+          'Avrupa Cad. No:36',
     ),
     Kargo(
       id: 5,
       teslimatId: 5,
       alici: '',
-      adres: 'Kurtuluş Cad. No:12',
+      adres:
+          'Kurtuluş Cad. No:12',
     ),
   ];
 
   int get bekleyenSayisi {
     return kargolar
         .where(
-          (kargo) => kargo.durum == KargoDurumu.pending,
+          (kargo) =>
+              kargo.durum ==
+              KargoDurumu.pending,
         )
         .length;
   }
@@ -96,26 +166,36 @@ class KargoStore extends ChangeNotifier {
   int get teslimEdilenSayisi {
     return kargolar
         .where(
-          (kargo) => kargo.durum == KargoDurumu.delivered,
+          (kargo) =>
+              kargo.durum ==
+              KargoDurumu.delivered,
         )
         .length;
   }
 
-  List<TeslimatGrubu> get teslimatGruplari {
-    final gruplar = <int, List<Kargo>>{};
+  List<TeslimatGrubu>
+      get teslimatGruplari {
+    final gruplar =
+        <int, List<Kargo>>{};
 
-    for (final kargo in kargolar) {
+    for (final kargo
+        in kargolar) {
       gruplar.putIfAbsent(
         kargo.teslimatId,
         () => [],
       );
 
-      gruplar[kargo.teslimatId]!.add(kargo);
+      gruplar[
+              kargo.teslimatId]!
+          .add(
+        kargo,
+      );
     }
 
     return gruplar.values
         .map(
-          (liste) => TeslimatGrubu(
+          (liste) =>
+              TeslimatGrubu(
             kargolar: liste,
           ),
         )
@@ -132,7 +212,8 @@ class KargoStore extends ChangeNotifier {
               (kargo) => kargo.id,
             )
             .reduce(
-              (a, b) => a > b ? a : b,
+              (a, b) =>
+                  a > b ? a : b,
             ) +
         1;
   }
@@ -144,10 +225,12 @@ class KargoStore extends ChangeNotifier {
 
     return kargolar
             .map(
-              (kargo) => kargo.teslimatId,
+              (kargo) =>
+                  kargo.teslimatId,
             )
             .reduce(
-              (a, b) => a > b ? a : b,
+              (a, b) =>
+                  a > b ? a : b,
             ) +
         1;
   }
@@ -157,13 +240,18 @@ class KargoStore extends ChangeNotifier {
     required String alici,
     required String adres,
   }) {
-    final teslimatId = _yeniTeslimatIdOlustur();
+    final teslimatId =
+        _yeniTeslimatIdOlustur();
 
-    for (int i = 0; i < adet; i++) {
+    for (int i = 0;
+        i < adet;
+        i++) {
       kargolar.add(
         Kargo(
-          id: _yeniKargoIdOlustur(),
-          teslimatId: teslimatId,
+          id:
+              _yeniKargoIdOlustur(),
+          teslimatId:
+              teslimatId,
           alici: alici,
           adres: adres,
         ),
@@ -173,17 +261,25 @@ class KargoStore extends ChangeNotifier {
     notifyListeners();
   }
 
-  void teslimEt(TeslimatGrubu grup) {
-    for (final kargo in grup.kargolar) {
-      kargo.durum = KargoDurumu.delivered;
+  void teslimEt(
+    TeslimatGrubu grup,
+  ) {
+    for (final kargo
+        in grup.kargolar) {
+      kargo.durum =
+          KargoDurumu.delivered;
     }
 
     notifyListeners();
   }
 
-  void teslimatiGeriAl(TeslimatGrubu grup) {
-    for (final kargo in grup.kargolar) {
-      kargo.durum = KargoDurumu.pending;
+  void teslimatiGeriAl(
+    TeslimatGrubu grup,
+  ) {
+    for (final kargo
+        in grup.kargolar) {
+      kargo.durum =
+          KargoDurumu.pending;
     }
 
     notifyListeners();
@@ -193,8 +289,10 @@ class KargoStore extends ChangeNotifier {
     TeslimatGrubu grup,
     String yeniNot,
   ) {
-    for (final kargo in grup.kargolar) {
-      kargo.not = yeniNot;
+    for (final kargo
+        in grup.kargolar) {
+      kargo.not =
+          yeniNot;
     }
 
     notifyListeners();
@@ -204,12 +302,46 @@ class KargoStore extends ChangeNotifier {
     TeslimatGrubu grup,
     String yeniAdres,
   ) {
-    for (final kargo in grup.kargolar) {
-      kargo.adres = yeniAdres;
+    for (final kargo
+        in grup.kargolar) {
+      kargo.adres =
+          yeniAdres;
+
+      kargo.latitude = null;
+      kargo.longitude = null;
+      kargo.konumDogrulugu =
+          null;
+      kargo.konumKaynagi =
+          null;
+    }
+
+    notifyListeners();
+  }
+
+  void konumGuncelle(
+    TeslimatGrubu grup, {
+    required double latitude,
+    required double longitude,
+    required KonumDogrulugu
+        konumDogrulugu,
+    required KonumKaynagi
+        konumKaynagi,
+  }) {
+    for (final kargo
+        in grup.kargolar) {
+      kargo.latitude =
+          latitude;
+      kargo.longitude =
+          longitude;
+      kargo.konumDogrulugu =
+          konumDogrulugu;
+      kargo.konumKaynagi =
+          konumKaynagi;
     }
 
     notifyListeners();
   }
 }
 
-final KargoStore kargoStore = KargoStore();
+final KargoStore kargoStore =
+    KargoStore();
