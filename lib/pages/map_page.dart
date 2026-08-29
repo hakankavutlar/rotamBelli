@@ -45,7 +45,7 @@ class _MapPageState
   bool _konumlandirmaCalisiyor =
       false;
 
-  int? _konumlandirilanTeslimatId;
+
 
   String? _sonKonumlandirmaHatasi;
 
@@ -191,8 +191,7 @@ class _MapPageState
         final arananAdres =
             hedefGrup.adres;
 
-        _konumlandirilanTeslimatId =
-            arananTeslimatId;
+
 
         _sonKonumlandirmaHatasi =
             null;
@@ -276,8 +275,6 @@ class _MapPageState
       _konumlandirmaCalisiyor =
           false;
 
-      _konumlandirilanTeslimatId =
-          null;
 
       if (mounted) {
         setState(() {});

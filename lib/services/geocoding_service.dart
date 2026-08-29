@@ -200,6 +200,79 @@ class GeocodingService {
         );
   }
 
+  bool _nominatimYolEslesiyor(
+    dynamic address,
+    String istenenYol,
+  ) {
+    if (address is! Map) {
+      return false;
+    }
+
+    final istenenAnahtar =
+        AddressNormalizer.yolAnahtar(
+      istenenYol,
+    );
+
+    if (istenenAnahtar.isEmpty) {
+      return false;
+    }
+
+    const alanlar = [
+      'road',
+      'street',
+      'pedestrian',
+      'residential',
+    ];
+
+    for (final alan in alanlar) {
+      final bulunan =
+          address[alan]?.toString();
+
+      if (bulunan == null ||
+          bulunan.trim().isEmpty) {
+        continue;
+      }
+
+      if (AddressNormalizer.yolAnahtar(
+            bulunan,
+          ) ==
+          istenenAnahtar) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  String _yerelAdresSorgusu(
+    NormalizeAdres parcalar, {
+    bool detayli = false,
+  }) {
+    final kisimlar = <String>[];
+
+    if (detayli) {
+      kisimlar.addAll(
+        parcalar.binaDetaylari,
+      );
+    }
+
+    if (parcalar.binaAdresi.isNotEmpty) {
+      kisimlar.add(
+        parcalar.binaAdresi,
+      );
+    }
+
+    kisimlar.add(
+      parcalar.mahalle ??
+          'Adnan Kahveci Mahallesi',
+    );
+    kisimlar.add('Beylikdüzü');
+    kisimlar.add('İstanbul');
+    kisimlar.add('Türkiye');
+
+    return kisimlar.join(', ');
+  }
+
   GeocodeResult?
       _nominatimSonucu(
     Map<String, dynamic>? sonuc, {
@@ -296,8 +369,14 @@ class GeocodingService {
       temizAdres,
     );
 
-    // Kapı numarası varsa önce gerçek bina
-    // seviyesinde eşleşme arıyoruz.
+    final temizYerelSorgu =
+        _yerelAdresSorgusu(
+      parcalar,
+    );
+
+    // Kapı numarası ve gerçek bir cadde/sokak adı çıkarabildiysek
+    // bina seviyesinde eşleşme arıyoruz. Uzun kullanıcı adresini
+    // doğrudan "street" alanına göndermiyoruz.
     if (parcalar.kapiNo != null &&
         parcalar
             .caddeSokak.isNotEmpty) {
@@ -316,6 +395,10 @@ class GeocodingService {
           _nominatimKapiNoEslesiyor(
             structured['address'],
             parcalar.kapiNo!,
+          ) &&
+          _nominatimYolEslesiyor(
+            structured['address'],
+            parcalar.caddeSokak,
           )) {
         final result =
             _nominatimSonucu(
@@ -330,13 +413,13 @@ class GeocodingService {
         return result;
       }
 
+      // Serbest sorguda da sadece geocoding için gerekli parçaları
+      // kullanıyoruz. Site/apartman/daire metinleri cadde adına
+      // karışmıyor ve mahalle iki kez eklenmiyor.
       final freeForm =
           await _nominatimAra(
         parametreler: {
-          'q':
-              '${parcalar.tamAdres}, '
-              'Adnan Kahveci Mahallesi, '
-              'Beylikdüzü, İstanbul, Türkiye',
+          'q': temizYerelSorgu,
         },
       );
 
@@ -344,6 +427,10 @@ class GeocodingService {
           _nominatimKapiNoEslesiyor(
             freeForm['address'],
             parcalar.kapiNo!,
+          ) &&
+          _nominatimYolEslesiyor(
+            freeForm['address'],
+            parcalar.caddeSokak,
           )) {
         final result =
             _nominatimSonucu(
@@ -358,8 +445,53 @@ class GeocodingService {
         return result;
       }
 
-      // 2) OSM tam binayı bulamadıysa,
-      // API anahtarı varsa Google'ı deneriz.
+      // Site/apartman adı gerçekten harita verisinde kayıtlıysa
+      // ikinci bir temiz sorgu faydalı olabilir. Daire numarasını
+      // bilerek sorguya katmıyoruz.
+      if (parcalar.binaDetaylari.isNotEmpty) {
+        final detayliSorgu =
+            _yerelAdresSorgusu(
+          parcalar,
+          detayli: true,
+        );
+
+        if (detayliSorgu !=
+            temizYerelSorgu) {
+          final detayli =
+              await _nominatimAra(
+            parametreler: {
+              'q': detayliSorgu,
+            },
+          );
+
+          if (detayli != null &&
+              _nominatimKapiNoEslesiyor(
+                detayli['address'],
+                parcalar.kapiNo!,
+              ) &&
+              _nominatimYolEslesiyor(
+                detayli['address'],
+                parcalar.caddeSokak,
+              )) {
+            final result =
+                _nominatimSonucu(
+              detayli,
+              dogruluk:
+                  KonumDogrulugu.tam,
+            );
+
+            _onbellek[anahtar] =
+                result;
+
+            return result;
+          }
+        }
+      }
+
+      // OSM gerçek binayı bulamadıysa Google'ı deneriz.
+      // Google servisi de artık temizlenmiş cadde + kapı numarası
+      // sorgusunu kullanacak ve hem kapı numarasını hem yol adını
+      // doğrulayacak.
       if (_googleGeocodingService
           .aktif) {
         final google =
@@ -398,14 +530,15 @@ class GeocodingService {
         }
       }
 
-      // 3) İki kaynak da binayı kesin
-      // bulamadıysa cadde seviyesine düş.
+      // Bu aşamada bina kesin bulunamadı. Şimdilik mevcut davranışı
+      // koruyup cadde seviyesine düşüyoruz. "Her teslimata mutlaka pin"
+      // kuralını ikinci problemde ayrıca güçlendireceğiz.
       final streetOnly =
           await _nominatimAra(
         parametreler: {
           'q':
               '${parcalar.caddeSokak}, '
-              'Adnan Kahveci Mahallesi, '
+              '${parcalar.mahalle ?? 'Adnan Kahveci Mahallesi'}, '
               'Beylikdüzü, İstanbul, Türkiye',
         },
       );
@@ -423,24 +556,46 @@ class GeocodingService {
       return approximate;
     }
 
-    // Kullanıcı kapı numarası istemediyse,
-    // bulunan cadde/sokak konumu sorgunun
-    // istediği seviyede tam sayılır.
-    final streetResult =
-        await _nominatimAra(
-      parametreler: {
-        'q':
-            '${parcalar.tamAdres}, '
-            'Adnan Kahveci Mahallesi, '
-            'Beylikdüzü, İstanbul, Türkiye',
-      },
-    );
+    // Kapı numarası yok ama yol adı çıkarılabildiyse yol seviyesinde
+    // temiz sorgu kullanıyoruz.
+    if (parcalar.caddeSokak.isNotEmpty) {
+      final streetResult =
+          await _nominatimAra(
+        parametreler: {
+          'q': temizYerelSorgu,
+        },
+      );
+
+      final result =
+          _nominatimSonucu(
+        streetResult,
+        dogruluk:
+            KonumDogrulugu.tam,
+      );
+
+      _onbellek[anahtar] =
+          result;
+
+      return result;
+    }
+
+    // Yol adı dahi çıkarılamadıysa eski serbest arama davranışını
+    // koruyoruz. Bunun güvenli yaklaşık-pin davranışını 2. adımda
+    // ele alacağız.
+    final serbestSorgu =
+        '${parcalar.tamAdres}, '
+        'Adnan Kahveci Mahallesi, '
+        'Beylikdüzü, İstanbul, Türkiye';
 
     final result =
         _nominatimSonucu(
-      streetResult,
+      await _nominatimAra(
+        parametreler: {
+          'q': serbestSorgu,
+        },
+      ),
       dogruluk:
-          KonumDogrulugu.tam,
+          KonumDogrulugu.yaklasik,
     );
 
     _onbellek[anahtar] =
@@ -448,4 +603,5 @@ class GeocodingService {
 
     return result;
   }
+
 }
