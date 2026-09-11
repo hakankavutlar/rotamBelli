@@ -908,11 +908,21 @@ class _MapPageState
             temelPinRengi
         : temelPinRengi;
 
+    const double markerWidth = 72;
+    const double markerHeight = 82;
+
+    final pinAnchor = Marker.computePixelAlignment(
+      width: markerWidth,
+      height: markerHeight,
+      left: markerWidth / 2,
+      top: 57,
+    );
+
     return Marker(
       point: konum,
-      width: 72,
-      height: 82,
-      alignment: Alignment.topCenter,
+      width: markerWidth,
+      height: markerHeight,
+      alignment: pinAnchor,
       child: GestureDetector(
         onTap: () {
           setState(() {
@@ -921,6 +931,7 @@ class _MapPageState
         },
         child: AnimatedScale(
           scale: secili ? 1.20 : 1.0,
+          alignment: pinAnchor,
           duration: const Duration(
             milliseconds: 150,
           ),

@@ -29,10 +29,7 @@ class GoogleGeocodingService {
   static final GoogleGeocodingService instance =
       GoogleGeocodingService._();
 
-  static const String _apiKey =
-      String.fromEnvironment(
-    'GOOGLE_GEOCODING_API_KEY',
-  );
+  static const String _apiKey = 'AIzaSyA0BTqbHr4txUc45-XELY2JAp87ChXTCRk';
 
   final HttpClient _client =
       HttpClient();
