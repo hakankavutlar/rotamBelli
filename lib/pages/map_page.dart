@@ -753,6 +753,31 @@ class _MapPageState
     );
   }
 
+  bool _ayniKoordinattaMi(
+    TeslimatGrubu birinci,
+    TeslimatGrubu ikinci,
+  ) {
+    if (!birinci.konumuVar ||
+        !ikinci.konumuVar) {
+      return false;
+    }
+
+    // Yaklaşık 10 cm'lik tolerans.
+    // Aynı bina için servislerin ürettiği çok küçük
+    // ondalık farklar yüzünden iki ayrı pin sayılmasını
+    // engelliyoruz.
+    const double tolerans = 0.000001;
+
+    return (birinci.latitude! -
+                    ikinci.latitude!)
+                .abs() <=
+            tolerans &&
+        (birinci.longitude! -
+                    ikinci.longitude!)
+                .abs() <=
+            tolerans;
+  }
+
   @override
   Widget build(
     BuildContext context,
@@ -769,24 +794,56 @@ class _MapPageState
           gruplar,
         );
 
-        final markers = gruplar
-            .asMap()
-            .entries
+        final konumluGruplar = gruplar
             .where(
-              (entry) =>
-                  entry.value
-                      .konumuVar,
+              (grup) =>
+                  grup.konumuVar,
             )
+            .toList();
+
+        final markers = konumluGruplar
             .map(
-              (entry) {
-                final grup =
-                    entry.value;
+              (grup) {
+                final ayniKonumdakiGruplar =
+                    konumluGruplar
+                        .where(
+                          (digerGrup) =>
+                              _ayniKoordinattaMi(
+                            grup,
+                            digerGrup,
+                          ),
+                        )
+                        .toList();
+
+                final toplamKargoAdedi =
+                    ayniKonumdakiGruplar.fold<int>(
+                  0,
+                  (toplam, digerGrup) =>
+                      toplam + digerGrup.adet,
+                );
+
+                final konumdakiTumKargolarTeslimEdildi =
+                    ayniKonumdakiGruplar.every(
+                  (digerGrup) =>
+                      digerGrup.teslimEdildi,
+                );
+
+                final konumSecili =
+                    ayniKonumdakiGruplar.any(
+                  (digerGrup) =>
+                      digerGrup.teslimatId ==
+                      seciliTeslimatId,
+                );
 
                 return _pinOlustur(
                   context,
                   grup: grup,
-                  sira:
-                      entry.key + 1,
+                  toplamKargoAdedi:
+                      toplamKargoAdedi,
+                  konumdakiTumKargolarTeslimEdildi:
+                      konumdakiTumKargolarTeslimEdildi,
+                  konumSecili:
+                      konumSecili,
                   konum: LatLng(
                     grup.latitude!,
                     grup.longitude!,
@@ -910,11 +967,14 @@ class _MapPageState
   Marker _pinOlustur(
     BuildContext context, {
     required TeslimatGrubu grup,
-    required int sira,
+    required int toplamKargoAdedi,
+    required bool konumdakiTumKargolarTeslimEdildi,
+    required bool konumSecili,
     required LatLng konum,
   }) {
-    final secili = grup.teslimatId == seciliTeslimatId;
-    final teslimEdildi = grup.teslimEdildi;
+    final secili = konumSecili;
+    final teslimEdildi =
+        konumdakiTumKargolarTeslimEdildi;
     final colorScheme = Theme.of(context).colorScheme;
 
     final Color temelPinRengi;
@@ -993,14 +1053,21 @@ class _MapPageState
                           size: 18,
                           color: Colors.green,
                         )
-                      : Text(
-                          '$sira',
-                          style: TextStyle(
-                            color: Colors.black,
-                            fontSize: sira >= 10 ? 11 : 14,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
+                      : toplamKargoAdedi > 1
+                          ? Text(
+                              '$toplamKargoAdedi',
+                              style: TextStyle(
+                                color: Colors.black,
+                                fontSize:
+                                    toplamKargoAdedi >= 100
+                                        ? 9
+                                        : toplamKargoAdedi >= 10
+                                            ? 11
+                                            : 14,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            )
+                          : const SizedBox.shrink(),
                 ),
               ),
             ],

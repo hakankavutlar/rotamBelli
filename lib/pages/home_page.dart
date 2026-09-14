@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../models/kargo_store.dart';
+import '../models/rota_sonucu.dart';
+import '../services/rota_hesaplama_service.dart';
 import 'map_page.dart';
 
 class YeniTeslimatVerisi {
@@ -503,6 +505,126 @@ class _KargoAnaSayfaState extends State<KargoAnaSayfa> {
     );
   }
 
+  Future<void> rotaHesaplamaTaslagiAc() async {
+    final bekleyenGruplar = teslimatGruplari
+        .where((grup) => !grup.teslimEdildi)
+        .toList();
+
+    final sonuc = await showDialog<_RotaTaslakSecimi>(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) {
+        return _RotaHesaplamaDialogu(
+          gruplar: bekleyenGruplar,
+        );
+      },
+    );
+
+    if (sonuc == null || !mounted) {
+      return;
+    }
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return const _RotaHesaplaniyorDialogu();
+      },
+    );
+
+    try {
+      final rota = await RotaHesaplamaService.instance.hesapla(
+        gruplar: teslimatGruplari,
+        baslangicTeslimatId:
+            sonuc.baslangicGrubu.teslimatId,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      Navigator.of(
+        context,
+        rootNavigator: true,
+      ).pop();
+
+      await showDialog<void>(
+        context: context,
+        builder: (context) {
+          return _RotaSonucDialogu(
+            rota: rota,
+          );
+        },
+      );
+    } on RotaHesaplamaHatasi catch (hata) {
+      if (!mounted) {
+        return;
+      }
+
+      Navigator.of(
+        context,
+        rootNavigator: true,
+      ).pop();
+
+      await showDialog<void>(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: const Text(
+              'Rota Hesaplanamadı',
+            ),
+            content: Text(
+              hata.mesaj,
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                },
+                child: const Text(
+                  'Tamam',
+                ),
+              ),
+            ],
+          );
+        },
+      );
+    } catch (hata) {
+      if (!mounted) {
+        return;
+      }
+
+      Navigator.of(
+        context,
+        rootNavigator: true,
+      ).pop();
+
+      await showDialog<void>(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: const Text(
+              'Rota Hesaplanamadı',
+            ),
+            content: Text(
+              'Beklenmeyen bir hata oluştu: $hata',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                },
+                child: const Text(
+                  'Tamam',
+                ),
+              ),
+            ],
+          );
+        },
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final gruplar = teslimatGruplari;
@@ -525,6 +647,10 @@ class _KargoAnaSayfaState extends State<KargoAnaSayfa> {
               if (secim == 'sifirla') {
                 sifirlamaOnayiAc();
               }
+
+              if (secim == 'rota_hesapla') {
+                rotaHesaplamaTaslagiAc();
+              }
             },
             itemBuilder: (context) {
               return const [
@@ -532,6 +658,12 @@ class _KargoAnaSayfaState extends State<KargoAnaSayfa> {
                   value: 'sifirla',
                   child: Text(
                     'Sıfırla',
+                  ),
+                ),
+                PopupMenuItem<String>(
+                  value: 'rota_hesapla',
+                  child: Text(
+                    'Rota Hesapla',
                   ),
                 ),
               ];
@@ -751,6 +883,569 @@ class _SifirlamaOnayDialoguState
             sifirlanabilir
                 ? 'Sıfırla'
                 : 'Sıfırla ($kalanSaniye)',
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ----------------------------------------------------
+// ROTA HESAPLAMA TASARIMI
+// ----------------------------------------------------
+
+class _RotaTaslakSecimi {
+  final TeslimatGrubu baslangicGrubu;
+  final String bitisNoktasi;
+
+  const _RotaTaslakSecimi({
+    required this.baslangicGrubu,
+    required this.bitisNoktasi,
+  });
+}
+
+class _RotaHesaplamaDialogu extends StatefulWidget {
+  final List<TeslimatGrubu> gruplar;
+
+  const _RotaHesaplamaDialogu({
+    required this.gruplar,
+  });
+
+  @override
+  State<_RotaHesaplamaDialogu> createState() {
+    return _RotaHesaplamaDialoguState();
+  }
+}
+
+class _RotaHesaplamaDialoguState extends State<_RotaHesaplamaDialogu> {
+  TeslimatGrubu? seciliBaslangic;
+  String? seciliBitis;
+
+  bool get onaylanabilir {
+    return seciliBaslangic != null && seciliBitis != null;
+  }
+
+  String _grupBaslik(TeslimatGrubu grup) {
+    if (grup.alici.isNotEmpty) {
+      return grup.alici;
+    }
+
+    return '#${grup.ilkKargo.id.toString().padLeft(3, '0')}';
+  }
+
+  String _grupAltMetin(TeslimatGrubu grup) {
+    if (grup.adet > 1) {
+      return '${grup.adres}\n${grup.adet} adet kargo';
+    }
+
+    return grup.adres;
+  }
+
+  Future<void> _baslangicSec() async {
+    if (widget.gruplar.isEmpty) {
+      await showDialog<void>(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: const Text(
+              'Kargo Yok',
+            ),
+            content: const Text(
+              'Başlangıç noktası seçebilmek için listede en az bir kargo olmalı.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                },
+                child: const Text(
+                  'Tamam',
+                ),
+              ),
+            ],
+          );
+        },
+      );
+
+      return;
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    final secim = await showModalBottomSheet<TeslimatGrubu>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (context) {
+        return SafeArea(
+          child: FractionallySizedBox(
+            heightFactor: 0.70,
+            child: Column(
+              children: [
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    20,
+                    8,
+                    20,
+                    12,
+                  ),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Başlangıç Noktası Seç',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: ListView.separated(
+                    itemCount: widget.gruplar.length,
+                    separatorBuilder: (context, index) {
+                      return const Divider(
+                        height: 1,
+                      );
+                    },
+                    itemBuilder: (context, index) {
+                      final grup = widget.gruplar[index];
+
+                      return ListTile(
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 5,
+                        ),
+                        leading: CircleAvatar(
+                          child: Text(
+                            '${index + 1}',
+                          ),
+                        ),
+                        title: Text(
+                          _grupBaslik(grup),
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        subtitle: Text(
+                          _grupAltMetin(grup),
+                        ),
+                        trailing: seciliBaslangic?.teslimatId == grup.teslimatId
+                            ? const Icon(
+                                Icons.check_circle,
+                              )
+                            : null,
+                        onTap: () {
+                          Navigator.pop(
+                            context,
+                            grup,
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (secim == null || !mounted) {
+      return;
+    }
+
+    setState(() {
+      seciliBaslangic = secim;
+    });
+  }
+
+  void _bitisSec() {
+    setState(() {
+      seciliBitis = 'En Stratejik Nokta';
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(
+        horizontal: 20,
+        vertical: 24,
+      ),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(
+          maxWidth: 440,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(
+            20,
+            22,
+            20,
+            18,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    Icons.route_outlined,
+                    color: colorScheme.primary,
+                  ),
+                  const SizedBox(
+                    width: 10,
+                  ),
+                  const Expanded(
+                    child: Text(
+                      'Rota Hesapla',
+                      style: TextStyle(
+                        fontSize: 21,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(
+                height: 22,
+              ),
+              _RotaSecimKutusu(
+                baslik: 'Başlangıç Noktası',
+                deger: seciliBaslangic == null
+                    ? 'Listeden bir kargo seç'
+                    : '${_grupBaslik(seciliBaslangic!)}\n${_grupAltMetin(seciliBaslangic!)}',
+                icon: Icons.trip_origin,
+                onTap: _baslangicSec,
+              ),
+              const SizedBox(
+                height: 16,
+              ),
+              _RotaSecimKutusu(
+                baslik: 'Final Noktası',
+                deger: seciliBitis ?? 'Seçmek için dokun',
+                icon: Icons.flag_outlined,
+                onTap: _bitisSec,
+              ),
+              const SizedBox(
+                height: 28,
+              ),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () {
+                        Navigator.pop(context);
+                      },
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 16,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(
+                            16,
+                          ),
+                        ),
+                      ),
+                      child: const Text(
+                        'İptal',
+                      ),
+                    ),
+                  ),
+                  const SizedBox(
+                    width: 14,
+                  ),
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: onaylanabilir
+                          ? () {
+                              Navigator.pop(
+                                context,
+                                _RotaTaslakSecimi(
+                                  baslangicGrubu: seciliBaslangic!,
+                                  bitisNoktasi: seciliBitis!,
+                                ),
+                              );
+                            }
+                          : null,
+                      style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 16,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(
+                            16,
+                          ),
+                        ),
+                      ),
+                      child: const Text(
+                        'Onayla',
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RotaSecimKutusu extends StatelessWidget {
+  final String baslik;
+  final String deger;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  const _RotaSecimKutusu({
+    required this.baslik,
+    required this.deger,
+    required this.icon,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(
+          18,
+        ),
+        onTap: onTap,
+        child: Ink(
+          width: double.infinity,
+          padding: const EdgeInsets.all(
+            16,
+          ),
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: Colors.black26,
+              width: 1.5,
+            ),
+            borderRadius: BorderRadius.circular(
+              18,
+            ),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                icon,
+              ),
+              const SizedBox(
+                width: 12,
+              ),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      baslik,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurfaceVariant,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(
+                      height: 7,
+                    ),
+                    Text(
+                      deger,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(
+                width: 8,
+              ),
+              const Icon(
+                Icons.chevron_right,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ----------------------------------------------------
+// ROTA HESAPLAMA DURUM / SONUÇ PENCERELERİ
+// ----------------------------------------------------
+
+class _RotaHesaplaniyorDialogu extends StatelessWidget {
+  const _RotaHesaplaniyorDialogu();
+
+  @override
+  Widget build(BuildContext context) {
+    return const AlertDialog(
+      content: Row(
+        children: [
+          SizedBox(
+            width: 26,
+            height: 26,
+            child: CircularProgressIndicator(
+              strokeWidth: 3,
+            ),
+          ),
+          SizedBox(
+            width: 18,
+          ),
+          Expanded(
+            child: Text(
+              'Gerçek yol mesafeleri alınıyor ve rota hesaplanıyor...',
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RotaSonucDialogu extends StatelessWidget {
+  final RotaSonucu rota;
+
+  const _RotaSonucDialogu({
+    required this.rota,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final mesafeMetni = rota.toplamMesafeKm < 1
+        ? '${rota.toplamMesafeMetre.round()} m'
+        : '${rota.toplamMesafeKm.toStringAsFixed(1)} km';
+
+    final sureMetni = rota.tahminiDakika <= 0
+        ? '0 dk'
+        : '${rota.tahminiDakika} dk';
+
+    return AlertDialog(
+      title: const Row(
+        children: [
+          Icon(
+            Icons.route,
+          ),
+          SizedBox(
+            width: 10,
+          ),
+          Text(
+            'Rota Hesaplandı',
+          ),
+        ],
+      ),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                Chip(
+                  avatar: const Icon(
+                    Icons.pin_drop_outlined,
+                    size: 18,
+                  ),
+                  label: Text(
+                    '${rota.duraklar.length} durak',
+                  ),
+                ),
+                Chip(
+                  avatar: const Icon(
+                    Icons.straighten,
+                    size: 18,
+                  ),
+                  label: Text(
+                    mesafeMetni,
+                  ),
+                ),
+                Chip(
+                  avatar: const Icon(
+                    Icons.schedule,
+                    size: 18,
+                  ),
+                  label: Text(
+                    sureMetni,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(
+              height: 12,
+            ),
+            Text(
+              'Final: ${rota.duraklar.isEmpty ? '-' : rota.duraklar.last.baslik}',
+              style: const TextStyle(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(
+              height: 12,
+            ),
+            Flexible(
+              child: ListView.separated(
+                shrinkWrap: true,
+                itemCount: rota.duraklar.length,
+                separatorBuilder: (context, index) {
+                  return const Divider(
+                    height: 1,
+                  );
+                },
+                itemBuilder: (context, index) {
+                  final durak = rota.duraklar[index];
+
+                  return ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    leading: CircleAvatar(
+                      radius: 17,
+                      child: Text(
+                        '${index + 1}',
+                      ),
+                    ),
+                    title: Text(
+                      durak.baslik,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    subtitle: Text(
+                      durak.toplamKargoAdedi > 1
+                          ? '${durak.adres}\n${durak.toplamKargoAdedi} adet kargo'
+                          : durak.adres,
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        FilledButton(
+          onPressed: () {
+            Navigator.pop(context);
+          },
+          child: const Text(
+            'Tamam',
           ),
         ),
       ],
