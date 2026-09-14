@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../models/kargo_store.dart';
@@ -473,6 +475,34 @@ class _KargoAnaSayfaState extends State<KargoAnaSayfa> {
     }
   }
 
+  Future<void> sifirlamaOnayiAc() async {
+    final onaylandi = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return const _SifirlamaOnayDialogu();
+      },
+    );
+
+    if (onaylandi != true || !mounted) {
+      return;
+    }
+
+    await kargoStore.tumVerileriSifirla();
+
+    if (!mounted) {
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Tüm kargolar silindi.',
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final gruplar = teslimatGruplari;
@@ -485,6 +515,29 @@ class _KargoAnaSayfaState extends State<KargoAnaSayfa> {
             fontWeight: FontWeight.bold,
           ),
         ),
+        actions: [
+          PopupMenuButton<String>(
+            icon: const Icon(
+              Icons.more_vert,
+            ),
+            tooltip: 'Menü',
+            onSelected: (secim) {
+              if (secim == 'sifirla') {
+                sifirlamaOnayiAc();
+              }
+            },
+            itemBuilder: (context) {
+              return const [
+                PopupMenuItem<String>(
+                  value: 'sifirla',
+                  child: Text(
+                    'Sıfırla',
+                  ),
+                ),
+              ];
+            },
+          ),
+        ],
       ),
       body: Column(
         children: [
@@ -596,6 +649,111 @@ class _KargoAnaSayfaState extends State<KargoAnaSayfa> {
           'Kargo Ekle',
         ),
       ),
+    );
+  }
+}
+
+// ----------------------------------------------------
+// SIFIRLAMA ONAY PENCERESİ
+// ----------------------------------------------------
+
+class _SifirlamaOnayDialogu extends StatefulWidget {
+  const _SifirlamaOnayDialogu();
+
+  @override
+  State<_SifirlamaOnayDialogu> createState() {
+    return _SifirlamaOnayDialoguState();
+  }
+}
+
+class _SifirlamaOnayDialoguState
+    extends State<_SifirlamaOnayDialogu> {
+  int kalanSaniye = 3;
+  Timer? _sayac;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _sayac = Timer.periodic(
+      const Duration(seconds: 1),
+      (timer) {
+        if (!mounted) {
+          timer.cancel();
+          return;
+        }
+
+        if (kalanSaniye <= 1) {
+          timer.cancel();
+
+          setState(() {
+            kalanSaniye = 0;
+          });
+
+          return;
+        }
+
+        setState(() {
+          kalanSaniye--;
+        });
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _sayac?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final sifirlanabilir = kalanSaniye == 0;
+
+    return AlertDialog(
+      title: const Text(
+        'Sıfırlamak istediğinize emin misiniz?',
+      ),
+      content: const Text(
+        'Bu işlem teslim edilecek ve teslim edilmiş '
+        'bütün kargoları kalıcı olarak siler.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () {
+            Navigator.pop(
+              context,
+              false,
+            );
+          },
+          child: const Text(
+            'Geri',
+          ),
+        ),
+        FilledButton(
+          onPressed: sifirlanabilir
+              ? () {
+                  Navigator.pop(
+                    context,
+                    true,
+                  );
+                }
+              : null,
+          style: FilledButton.styleFrom(
+            backgroundColor: Colors.red,
+            foregroundColor: Colors.white,
+            disabledBackgroundColor:
+                Colors.grey.shade300,
+            disabledForegroundColor:
+                Colors.grey.shade600,
+          ),
+          child: Text(
+            sifirlanabilir
+                ? 'Sıfırla'
+                : 'Sıfırla ($kalanSaniye)',
+          ),
+        ),
+      ],
     );
   }
 }

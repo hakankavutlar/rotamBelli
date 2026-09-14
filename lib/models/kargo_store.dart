@@ -613,23 +613,16 @@ class KargoStore
     _degisiklikYapildi();
   }
 
-  /// İleride Ayarlar ekranına
-  /// "Tüm verileri sıfırla" butonu koyarsak
-  /// bunu kullanabiliriz.
+  /// Bekleyen, teslim edilmiş veya atlanmış fark etmeksizin
+  /// bütün kargoları siler ve boş listeyi kalıcı olarak kaydeder.
   Future<void>
       tumVerileriSifirla() async {
-    kargolar
-      ..clear()
-      ..addAll(
-        _varsayilanKargolar(),
-      );
+    kargolar.clear();
 
     notifyListeners();
 
-    await _preferences.remove(
-      _depolamaAnahtari,
-    );
-
+    // Anahtarı silmiyoruz. Boş listeyi özellikle kaydediyoruz ki
+    // uygulama yeniden açıldığında varsayılan kargolar geri gelmesin.
     await _kaydetSirayaAl();
   }
 }
