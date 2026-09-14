@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/kargo_store.dart';
+import 'map_page.dart';
 
 class YeniTeslimatVerisi {
   final int adet;
@@ -42,6 +43,24 @@ class _KargoAnaSayfaState extends State<KargoAnaSayfa> {
 
   List<TeslimatGrubu> get teslimatGruplari =>
       kargoStore.teslimatGruplari;
+
+  @override
+  void initState() {
+    super.initState();
+    kargoStore.addListener(_storeDegisti);
+  }
+
+  @override
+  void dispose() {
+    kargoStore.removeListener(_storeDegisti);
+    super.dispose();
+  }
+
+  void _storeDegisti() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
 
   Future<bool> teslimOnayiSor(
     TeslimatGrubu grup,
@@ -456,12 +475,9 @@ class _KargoAnaSayfaState extends State<KargoAnaSayfa> {
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: kargoStore,
-      builder: (context, child) {
-        final gruplar = teslimatGruplari;
+    final gruplar = teslimatGruplari;
 
-        return Scaffold(
+    return Scaffold(
       appBar: AppBar(
         title: const Text(
           'Kargo Dağıtım',
@@ -570,18 +586,16 @@ class _KargoAnaSayfaState extends State<KargoAnaSayfa> {
           ),
         ],
       ),
-          floatingActionButton:
-              FloatingActionButton.extended(
-            onPressed: kargoEkleMenuAc,
-            icon: const Icon(
-              Icons.add,
-            ),
-            label: const Text(
-              'Kargo Ekle',
-            ),
-          ),
-        );
-      },
+      floatingActionButton:
+          FloatingActionButton.extended(
+        onPressed: kargoEkleMenuAc,
+        icon: const Icon(
+          Icons.add,
+        ),
+        label: const Text(
+          'Kargo Ekle',
+        ),
+      ),
     );
   }
 }
@@ -1535,13 +1549,124 @@ class KargoSatiri extends StatelessWidget {
     required this.uzunBas,
   });
 
+  Future<void> _pinOlusturmaSor(
+    BuildContext context,
+  ) async {
+    if (grup.konumuVar) {
+      return;
+    }
+
+    final pinOlustur =
+        await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text(
+            'Haritadan Pin Oluşturmak İster Misiniz?',
+          ),
+          content: Text(
+            '${grup.adres}\n\n'
+            'Bu adres için haritada bir nokta seçerek '
+            'manuel pin oluşturabilirsiniz.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(
+                  dialogContext,
+                ).pop(false);
+              },
+              child: const Text(
+                'Hayır',
+              ),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.of(
+                  dialogContext,
+                ).pop(true);
+              },
+              child: const Text(
+                'Evet',
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (pinOlustur != true ||
+        !context.mounted) {
+      return;
+    }
+
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) {
+          return MapPage(
+            ilkSeciliTeslimatId:
+                grup.teslimatId,
+            pinOlusturmaModu: true,
+          );
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final teslimEdildi = grup.teslimEdildi;
+    final colorScheme = Theme.of(context).colorScheme;
 
-    return GestureDetector(
-      onLongPress: uzunBas,
-      child: AnimatedContainer(
+    final Color teslimatRengi;
+
+    if (teslimEdildi) {
+      teslimatRengi = Colors.green;
+    } else if (!grup.konumuVar) {
+      // Haritada henüz pini olmayan teslimatlar:
+      // hafif saydam #F7D439.
+      teslimatRengi =
+          const Color(0xFFF7D439).withValues(
+        alpha: 0.72,
+      );
+    } else {
+      // MapPage'deki normal pin rengi.
+      final temelPinRengi = colorScheme.secondary;
+
+      // MapPage'deki "yaklaşık konum" rengiyle
+      // birebir aynı hesap.
+      teslimatRengi = grup.konumYaklasik
+          ? Color.lerp(
+                temelPinRengi,
+                Colors.white,
+                0.45,
+              ) ??
+              temelPinRengi
+          : temelPinRengi;
+    }
+
+    final numaraRengi =
+        teslimatRengi.computeLuminance() > 0.55
+            ? Colors.black
+            : Colors.white;
+
+    final pinsiz = !grup.konumuVar;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: pinsiz
+            ? () {
+                _pinOlusturmaSor(
+                  context,
+                );
+              }
+            : null,
+        onLongPress: uzunBas,
+        borderRadius: BorderRadius.circular(
+          12,
+        ),
+        child: AnimatedContainer(
         duration: const Duration(
           milliseconds: 250,
         ),
@@ -1569,16 +1694,10 @@ class KargoSatiri extends StatelessWidget {
               height: 58,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: teslimEdildi
-                    ? Colors.green
-                    : Colors.transparent,
+                color: teslimatRengi,
                 border: Border.all(
                   width: 2,
-                  color: teslimEdildi
-                      ? Colors.green
-                      : Theme.of(context)
-                          .colorScheme
-                          .primary,
+                  color: teslimatRengi,
                 ),
               ),
               child: Center(
@@ -1590,10 +1709,11 @@ class KargoSatiri extends StatelessWidget {
                       )
                     : Text(
                         '$sira',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 21,
                           fontWeight:
                               FontWeight.bold,
+                          color: numaraRengi,
                         ),
                       ),
               ),
@@ -1732,6 +1852,7 @@ class KargoSatiri extends StatelessWidget {
           ],
         ),
       ),
+    ),
     );
   }
 }

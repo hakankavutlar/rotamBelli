@@ -7,7 +7,14 @@ import '../services/geocoding_service.dart';
 import '../services/verified_address_service.dart';
 
 class MapPage extends StatefulWidget {
-  const MapPage({super.key});
+  final int? ilkSeciliTeslimatId;
+  final bool pinOlusturmaModu;
+
+  const MapPage({
+    super.key,
+    this.ilkSeciliTeslimatId,
+    this.pinOlusturmaModu = false,
+  });
 
   @override
   State<MapPage> createState() =>
@@ -52,6 +59,23 @@ class _MapPageState
   @override
   void initState() {
     super.initState();
+
+    seciliTeslimatId =
+        widget.ilkSeciliTeslimatId;
+
+    _konumDuzeltmeModu =
+        widget.pinOlusturmaModu &&
+            widget.ilkSeciliTeslimatId !=
+                null;
+
+    if (_konumDuzeltmeModu) {
+      // Kullanıcı bu teslimat için manuel pin oluşturmak
+      // istedi. Otomatik geocoding aynı teslimata tekrar
+      // müdahale etmesin.
+      _konumuBulunamayanTeslimatlar.add(
+        widget.ilkSeciliTeslimatId!,
+      );
+    }
 
     _adresleriKaydet();
 
@@ -546,6 +570,13 @@ class _MapPageState
     }
 
     setState(() {
+      _konumuBulunamayanTeslimatlar.remove(
+        grup.teslimatId,
+      );
+
+      _sonKonumlandirmaHatasi =
+          null;
+
       _konumDuzeltmeModu =
           false;
     });
