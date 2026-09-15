@@ -543,6 +543,41 @@ class _KargoAnaSayfaState extends State<KargoAnaSayfa> {
         return;
       }
 
+      // Hesaplanan rota sırasını ana sayfadaki kargo listesine uygula.
+      // Aynı fiziksel duraktaki birden fazla teslimat yan yana kalır.
+      final rotaTeslimatIdSirasi = <int>[];
+
+      for (final durak in rota.duraklar) {
+        final durakTeslimatlari =
+            List<TeslimatGrubu>.from(durak.teslimatGruplari);
+
+        // Seçilen başlangıç teslimatı aynı koordinatta başka teslimatlarla
+        // birleşmişse ana listede de o teslimatı ilk sıraya al.
+        if (durak == rota.duraklar.first) {
+          final baslangicIndex = durakTeslimatlari.indexWhere(
+            (grup) =>
+                grup.teslimatId ==
+                sonuc.baslangicGrubu.teslimatId,
+          );
+
+          if (baslangicIndex > 0) {
+            final baslangicGrubu =
+                durakTeslimatlari.removeAt(baslangicIndex);
+            durakTeslimatlari.insert(0, baslangicGrubu);
+          }
+        }
+
+        rotaTeslimatIdSirasi.addAll(
+          durakTeslimatlari.map(
+            (grup) => grup.teslimatId,
+          ),
+        );
+      }
+
+      kargoStore.rotayaGoreSirala(
+        rotaTeslimatIdSirasi,
+      );
+
       Navigator.of(
         context,
         rootNavigator: true,

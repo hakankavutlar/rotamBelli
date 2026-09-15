@@ -613,6 +613,65 @@ class KargoStore
     _degisiklikYapildi();
   }
 
+  /// Rota motorunun ürettiği teslimat sırasını ana kargo listesine uygular.
+  /// Rotada olmayan teslimatlar (ör. daha önce teslim edilmiş olanlar)
+  /// mevcut kendi sıralarını koruyarak listenin sonuna taşınır.
+  void rotayaGoreSirala(
+    List<int> teslimatIdSirasi,
+  ) {
+    if (teslimatIdSirasi.isEmpty || kargolar.isEmpty) {
+      return;
+    }
+
+    // Aynı teslimatId'ye ait birden fazla kargo olabilir.
+    // Önce mevcut sırayı bozmadan teslimat bazında grupluyoruz.
+    final teslimatKargolari = <int, List<Kargo>>{};
+    final mevcutTeslimatSirasi = <int>[];
+
+    for (final kargo in kargolar) {
+      if (!teslimatKargolari.containsKey(kargo.teslimatId)) {
+        teslimatKargolari[kargo.teslimatId] = <Kargo>[];
+        mevcutTeslimatSirasi.add(kargo.teslimatId);
+      }
+
+      teslimatKargolari[kargo.teslimatId]!.add(kargo);
+    }
+
+    final yeniListe = <Kargo>[];
+    final eklendi = <int>{};
+
+    // Önce rota üzerindeki teslimatları hesaplanan sırayla ekle.
+    for (final teslimatId in teslimatIdSirasi) {
+      if (!eklendi.add(teslimatId)) {
+        continue;
+      }
+
+      final grup = teslimatKargolari[teslimatId];
+      if (grup != null) {
+        yeniListe.addAll(grup);
+      }
+    }
+
+    // Rota dışında kalanları (teslim edilmiş vb.) en alta,
+    // eski kendi sıralarını koruyarak ekle.
+    for (final teslimatId in mevcutTeslimatSirasi) {
+      if (!eklendi.add(teslimatId)) {
+        continue;
+      }
+
+      final grup = teslimatKargolari[teslimatId];
+      if (grup != null) {
+        yeniListe.addAll(grup);
+      }
+    }
+
+    kargolar
+      ..clear()
+      ..addAll(yeniListe);
+
+    _degisiklikYapildi();
+  }
+
   /// Bekleyen, teslim edilmiş veya atlanmış fark etmeksizin
   /// bütün kargoları siler ve boş listeyi kalıcı olarak kaydeder.
   Future<void>

@@ -801,57 +801,83 @@ class _MapPageState
             )
             .toList();
 
-        final markers = konumluGruplar
-            .map(
-              (grup) {
-                final ayniKonumdakiGruplar =
-                    konumluGruplar
-                        .where(
-                          (digerGrup) =>
-                              _ayniKoordinattaMi(
-                            grup,
-                            digerGrup,
-                          ),
-                        )
-                        .toList();
+        // Aynı koordinata düşen teslimatları haritada tek pin olarak
+        // gösteriyoruz. Pinin içindeki sayı home_page listesindeki sırayı,
+        // alttaki üçgen ise o fiziksel noktadaki toplam kargo adedini gösterir.
+        final markers = <Marker>[];
+        final islenenTeslimatIdleri = <int>{};
 
-                final toplamKargoAdedi =
-                    ayniKonumdakiGruplar.fold<int>(
-                  0,
-                  (toplam, digerGrup) =>
-                      toplam + digerGrup.adet,
-                );
+        for (final grup in konumluGruplar) {
+          if (islenenTeslimatIdleri.contains(grup.teslimatId)) {
+            continue;
+          }
 
-                final konumdakiTumKargolarTeslimEdildi =
-                    ayniKonumdakiGruplar.every(
+          final ayniKonumdakiGruplar = konumluGruplar
+              .where(
+                (digerGrup) => _ayniKoordinattaMi(
+                  grup,
+                  digerGrup,
+                ),
+              )
+              .toList();
+
+          islenenTeslimatIdleri.addAll(
+            ayniKonumdakiGruplar.map(
+              (digerGrup) => digerGrup.teslimatId,
+            ),
+          );
+
+          final toplamKargoAdedi = ayniKonumdakiGruplar.fold<int>(
+            0,
+            (toplam, digerGrup) => toplam + digerGrup.adet,
+          );
+
+          final konumdakiTumKargolarTeslimEdildi =
+              ayniKonumdakiGruplar.every(
+            (digerGrup) => digerGrup.teslimEdildi,
+          );
+
+          final konumSecili = ayniKonumdakiGruplar.any(
+            (digerGrup) => digerGrup.teslimatId == seciliTeslimatId,
+          );
+
+          // Aynı konumda birden fazla teslimat varsa pin numarası,
+          // home_page'de o konumdaki ilk teslimatın sıra numarasıdır.
+          final sira = ayniKonumdakiGruplar
+                  .map(
+                    (digerGrup) => gruplar.indexWhere(
+                      (listeGrubu) =>
+                          listeGrubu.teslimatId == digerGrup.teslimatId,
+                    ),
+                  )
+                  .where((index) => index >= 0)
+                  .reduce((a, b) => a < b ? a : b) +
+              1;
+
+          final pinGrubu = konumSecili
+              ? ayniKonumdakiGruplar.firstWhere(
                   (digerGrup) =>
-                      digerGrup.teslimEdildi,
-                );
+                      digerGrup.teslimatId == seciliTeslimatId,
+                  orElse: () => ayniKonumdakiGruplar.first,
+                )
+              : ayniKonumdakiGruplar.first;
 
-                final konumSecili =
-                    ayniKonumdakiGruplar.any(
-                  (digerGrup) =>
-                      digerGrup.teslimatId ==
-                      seciliTeslimatId,
-                );
-
-                return _pinOlustur(
-                  context,
-                  grup: grup,
-                  toplamKargoAdedi:
-                      toplamKargoAdedi,
-                  konumdakiTumKargolarTeslimEdildi:
-                      konumdakiTumKargolarTeslimEdildi,
-                  konumSecili:
-                      konumSecili,
-                  konum: LatLng(
-                    grup.latitude!,
-                    grup.longitude!,
-                  ),
-                );
-              },
-            )
-            .toList();
+          markers.add(
+            _pinOlustur(
+              context,
+              grup: pinGrubu,
+              sira: sira,
+              toplamKargoAdedi: toplamKargoAdedi,
+              konumdakiTumKargolarTeslimEdildi:
+                  konumdakiTumKargolarTeslimEdildi,
+              konumSecili: konumSecili,
+              konum: LatLng(
+                grup.latitude!,
+                grup.longitude!,
+              ),
+            ),
+          );
+        }
 
         return Scaffold(
           body: Column(
@@ -967,6 +993,7 @@ class _MapPageState
   Marker _pinOlustur(
     BuildContext context, {
     required TeslimatGrubu grup,
+    required int sira,
     required int toplamKargoAdedi,
     required bool konumdakiTumKargolarTeslimEdildi,
     required bool konumSecili,
@@ -1000,7 +1027,7 @@ class _MapPageState
         : temelPinRengi;
 
     const double markerWidth = 72;
-    const double markerHeight = 82;
+    const double markerHeight = 106;
 
     final pinAnchor = Marker.computePixelAlignment(
       width: markerWidth,
@@ -1047,29 +1074,28 @@ class _MapPageState
                       color: Colors.black12,
                     ),
                   ),
-                  child: teslimEdildi
-                      ? const Icon(
-                          Icons.check,
-                          size: 18,
-                          color: Colors.green,
-                        )
-                      : toplamKargoAdedi > 1
-                          ? Text(
-                              '$toplamKargoAdedi',
-                              style: TextStyle(
-                                color: Colors.black,
-                                fontSize:
-                                    toplamKargoAdedi >= 100
-                                        ? 9
-                                        : toplamKargoAdedi >= 10
-                                            ? 11
-                                            : 14,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            )
-                          : const SizedBox.shrink(),
+                  child: Text(
+                    '$sira',
+                    style: TextStyle(
+                      color: Colors.black,
+                      fontSize: sira >= 100
+                          ? 9
+                          : sira >= 10
+                              ? 11
+                              : 14,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ),
               ),
+              if (toplamKargoAdedi > 1)
+                Positioned(
+                  top: 57,
+                  child: _KargoAdetUcgeni(
+                    adet: toplamKargoAdedi,
+                    renk: temelPinRengi,
+                  ),
+                ),
             ],
           ),
         ),
@@ -1297,6 +1323,54 @@ class _MapPageState
                 ),
         ),
       ],
+    );
+  }
+}
+
+// ----------------------------------------------------
+// HARİTA PİNİ KARGO ADET ÜÇGENİ
+// ----------------------------------------------------
+
+class _KargoAdetUcgeni extends StatelessWidget {
+  final int adet;
+  final Color renk;
+
+  const _KargoAdetUcgeni({
+    required this.adet,
+    required this.renk,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 44,
+      height: 42,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Icon(
+            Icons.change_history,
+            size: 44,
+            color: renk,
+          ),
+          Align(
+            alignment: const Alignment(0, 0.28),
+            child: Text(
+              '$adet',
+              style: TextStyle(
+                color: Colors.black,
+                fontSize: adet >= 100
+                    ? 9
+                    : adet >= 10
+                        ? 11
+                        : 14,
+                fontWeight: FontWeight.bold,
+                height: 1,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
